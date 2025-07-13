@@ -1,0 +1,43 @@
+\# Django backend .gitignore
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+
+# Database / media / static
+*.sqlite3
+*.db
+media/
+staticfiles/
+
+# Env files
+.env
+.env.*
+*.log
+
+# Translations
+*.pot
+*.mo
+
+# Swaps & temp files
+*.swp
+*.swo
+*.bak
+*~
+
+# IDE/editor
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Docker/virtualenv
+.venv/
+venv/
+*.dockerignore
+
+# Migrations cache (extra safe)
+*/migrations/__pycache__/

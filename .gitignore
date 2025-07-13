@@ -35,3 +35,24 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+# Root-level .gitignore
+
+# IDE/editor settings
+.idea/
+.vscode/
+*.iml
+
+# System files
+.DS_Store
+
+# Environment
+# .env
+# .env.local
+# .env.*
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+*.log
