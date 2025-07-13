@@ -50,6 +50,7 @@ jobs:
           USER_DATA=$(cat << 'EOF' | base64 -w0
           #!/bin/bash
           apt-get update
+          apt-get install -y unzip curl jq
           # Install AWS CLI
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip awscliv2.zip
@@ -114,4 +115,4 @@ jobs:
         run: |
           aws autoscaling start-instance-refresh \
             --auto-scaling-group-name ${{ secrets.ASG_NAME }} \
-            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 120}'
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 300}'
