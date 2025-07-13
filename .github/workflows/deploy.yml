@@ -3,16 +3,22 @@ name: Build and Deploy with Compose
 on:
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'aifastapi/**'
+      - 'docker-compose.yml'
 
 env:
   DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: ['backend', 'frontend', 'aifastapi'] # Add your services
+        service: ['backend', 'frontend', 'aifastapi']
     steps:
       - uses: actions/checkout@v3
       
@@ -24,3 +30,88 @@ jobs:
           cd ${{ matrix.service }}
           docker build -t $DOCKERHUB_USER/${{ matrix.service }}:latest .
           docker push $DOCKERHUB_USER/${{ matrix.service }}:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $AWS_REGION
+
+      - name: Update Launch Template
+        run: |
+          # Base64 encode the user data script
+          USER_DATA=$(cat << 'EOF' | base64 -w0
+          #!/bin/bash
+          apt-get update
+          # Install AWS CLI
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+          sudo ln -svf /usr/local/bin/aws /usr/bin/aws
+          
+          # Install Docker
+          curl -fsSL https://get.docker.com -o get-docker.sh
+          sudo sh get-docker.sh
+          systemctl start docker
+          systemctl enable docker
+          
+          # Install Docker Compose
+          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          
+          # Create app directory
+          mkdir -p /opt/app && cd /opt/app
+          
+          # make the aifastapi file environment variables env_file
+          touch .env.aifastapi
+
+          # Fetch environment secrets
+          aws secretsmanager get-secret-value \
+            --secret-id frontend/env.front \
+            --query SecretString \
+            --output text > .env.frontend
+
+          aws secretsmanager get-secret-value \
+            --secret-id backend/env.back \
+            --query SecretString \
+            --output text > .env.backend
+
+          # Write compose file
+          curl -sSL https://raw.githubusercontent.com/eamanze/project-1/main/docker-compose.yml -o /opt/app/docker-compose.yml
+          
+          # Login to Docker Hub
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          # Start services
+          docker-compose pull && docker-compose up -d
+          EOF
+          )
+
+          # Update launch template
+          aws ec2 create-launch-template-version \
+            --launch-template-id ${{ secrets.LAUNCH_TEMPLATE_ID }} \
+            --source-version \$Latest \
+            --launch-template-data "UserData=$USER_DATA"
+
+          # Set new version as default
+          LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id ${{ secrets.LAUNCH_TEMPLATE_ID }} \
+            --query 'max_by(LaunchTemplateVersions, &VersionNumber).VersionNumber' \
+            --output text)
+          
+          aws ec2 modify-launch-template \
+            --launch-template-id ${{ secrets.LAUNCH_TEMPLATE_ID }} \
+            --default-version $LATEST_VERSION
+
+      - name: Start Instance Refresh
+        run: |
+          aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name ${{ secrets.ASG_NAME }} \
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 120}'
