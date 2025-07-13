@@ -18,19 +18,15 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: eamanze/backend:latest
     command: > 
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
     env_file:
-      - ./backend/.env
+      - ./.env.backend
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0  # Hardcoded Redis URL
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0  # Hardcoded Redis URL
-    volumes:
-      - ./backend:/app
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     ports:
       - "8000:8000"
     networks:
@@ -38,14 +34,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:  # Added Redis dependency
+      redis:
         condition: service_healthy
 
   redis:
     image: redis:alpine
     command: redis-server --save 60 1 --loglevel warning
     networks:
-      - backend  # Critical fix: Added network attachment
+      - backend
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -53,14 +49,10 @@ services:
       retries: 5
 
   celery-default:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: eamanze/backend:latest
     command: celery -A auth worker --loglevel=info -Q default --without-gossip --without-heartbeat --without-mingle
-    volumes:
-      - ./backend:/app
     env_file:
-      - ./backend/.env
+      - ./.env.backend
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -71,12 +63,10 @@ services:
       - backend
 
   celery-text-processor:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: eamanze/backend:latest
     command: celery -A auth worker --loglevel=info -Q text-processor --without-gossip --without-heartbeat --without-mingle
     env_file:
-      - ./backend/.env
+      - ./.env.backend
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -87,35 +77,27 @@ services:
       - backend
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: eamanze/frontend:latest
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     command: npm run dev
     env_file:
-      - ./frontend/.env.local
+      - ./.env.frontend
     networks:
-      - backend  # Frontend can communicate with backend via this network
+      - backend
     depends_on:
       - backend
+
   aifastapi:
-    build:
-      context: ./aifastapi  
-      dockerfile: Dockerfile
+    image: eamanze/aifastapi:latest
     command: uvicorn server:app --host 0.0.0.0 --port 8010 --reload
     ports:
       - "8010:8010"
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    volumes:
-      - ./aifastapi:/app  
     env_file:
-      - ./aifastapi/.env  
+      - ./.env.aifastapi
     depends_on:
       - redis
       - postgres
@@ -125,7 +107,6 @@ services:
 networks:
   backend:
     driver: bridge
-    # Optional IPAM configuration for subnet control
     ipam:
       config:
         - subnet: 172.20.0.0/24
